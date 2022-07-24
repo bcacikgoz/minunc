@@ -47,14 +47,15 @@ def MatthewDavies(H):
 
 class optimOptions:
     def __init__(self,  gradTolerance = 1e-6, maxIter = 100,
-                 armijoLineSearchAlpha = 1, armijoLineSearchDelta = 0.05, armijoLineSearchBeta = 0.6,
-                 exactLineSearchIntervalTolerance = 1e-6,exactLineSearchLowerBound = 0, exactLineSearchUpperBound = 1,
+                 armijoLineSearcht = 1, armijoLineSearchBeta = 0.1, armijoLineSearchBeta2 = 0.2, armijoLineSearchShrinkage = 0.6,
+                 exactLineSearchIntervalTolerance = 1e-6, exactLineSearchLowerBound = 0, exactLineSearchUpperBound = 1,
                 GQTnonposdefBeta = 1e3, GQTposdefBeta = 1):
         self.gradTolerance = gradTolerance
         self.maxIter = maxIter
-        self.armijoLineSearchAlpha = armijoLineSearchAlpha
-        self.armijoLineSearchDelta = armijoLineSearchDelta
+        self.armijoLineSearcht = armijoLineSearcht
         self.armijoLineSearchBeta = armijoLineSearchBeta
+        self.armijoLineSearchBeta2 = armijoLineSearchBeta2
+        self.armijoLineSearchShrinkage = armijoLineSearchShrinkage
         self.exactLineSearchLowerBound = exactLineSearchLowerBound
         self.exactLineSearchUpperBound = exactLineSearchUpperBound
         self.GQTposdefBeta = GQTposdefBeta
@@ -105,16 +106,22 @@ def gsSearch(descentCost, optimOptionsInstance):
 
 
 def btLineSearch(x, grad, direction, cfunc, optimOptionsInstance):
-    g = grad
+    g = grad( x )
     d = direction
-    delta = optimOptionsInstance.armijoLineSearchDelta
-    alpha = optimOptionsInstance.armijoLineSearchAlpha
-    beta = optimOptionsInstance.armijoLineSearchBeta
-    costFunc = cfunc
+    delta = optimOptionsInstance.armijoLineSearchBeta
+    delta2 = optimOptionsInstance.armijoLineSearchBeta2
+    alpha = optimOptionsInstance.armijoLineSearcht
+    beta = optimOptionsInstance.armijoLineSearchShrinkage
+    
     while 1:
-        decVal = costFunc(x+alpha*d)
-        upLimVal = costFunc(x) + delta*alpha*np.real(np.vdot(np.conj(g), d))
-        if decVal>upLimVal:
+        xnext = x + alpha*d
+        fnext = cfunc( xnext )
+        descent = cfunc(x) - fnext
+        upLimVal = cfunc(x) + delta*alpha*np.real(np.vdot(np.conj(g), d))
+        minDescent = -1*delta*alpha*np.real(np.vdot(np.conj(g), d))
+        gnext = grad( xnext )
+
+        if descent < minDescent or gnext.T@d < delta2*g.T@d:
             alpha = alpha*beta
         else:
             return alpha
@@ -129,13 +136,13 @@ def steepestDescent(init, cfunc, gfunc, optimOptionsInstance):
         descentCost = lambda alpha: cfunc(x + alpha*d)
         ss = gsSearch(descentCost, optimOptionsInstance)
         ss = ss[0]
-        xnext = x + ss*d
-        fnext = cfunc(xnext)
+        fnext = x + ss*d
+        fnext = cfunc(fnext)
         if np.linalg.norm(ss*d) < optimOptionsInstance.gradTolerance:
-            minimizer = xnext
+            minimizer = fnext
             minimum = fnext
             return minimizer, minimum
-        x = xnext
+        x = fnext
 
 def spectralGradient(init, cfunc, gfunc, optimOptionsInstance):
     maxIter = optimOptionsInstance.maxIter
@@ -167,7 +174,7 @@ def cgFletcherReeves(init, cfunc, gfunc, optimOptionsInstance):
     k = 1
     g = gfunc(x)
     d = -g
-    ss = btLineSearch(x, g, d, cfunc, optimOptionsInstance)
+    ss = btLineSearch(x, gfunc, d, cfunc, optimOptionsInstance)
     gprev = g
     dprev = d
     x = x + ss*d
@@ -175,7 +182,7 @@ def cgFletcherReeves(init, cfunc, gfunc, optimOptionsInstance):
         g = gfunc(x)
         beta = (np.linalg.norm(g)**2)/(np.linalg.norm(gprev)**2)
         d = -g + beta*dprev
-        ss = btLineSearch(x,g,d, cfunc, optimOptionsInstance)
+        ss = btLineSearch(x,gfunc,d, cfunc, optimOptionsInstance)
         x = x + ss*d
         dprev = d
         gprev = g
@@ -199,7 +206,7 @@ def cgPRP(init, cfunc, gfunc, optimOptionsInstance):
     k = 1
     g = gfunc(x)
     d = -g
-    ss = btLineSearch(x, g, d, cfunc, optimOptionsInstance)
+    ss = btLineSearch(x, gfunc, d, cfunc, optimOptionsInstance)
     gprev = g
     dprev = d
     x = x + ss*d
@@ -207,7 +214,7 @@ def cgPRP(init, cfunc, gfunc, optimOptionsInstance):
         g = gfunc(x)
         beta = (np.vdot(g, g-gprev))/(np.linalg.norm(gprev)**2)
         d = -g + beta*dprev
-        ss = btLineSearch(x,g,d, cfunc, optimOptionsInstance)
+        ss = btLineSearch(x,gfunc,d, cfunc, optimOptionsInstance)
         x = x + ss*d
         dprev = d
         gprev = g
@@ -231,7 +238,7 @@ def cgHF(init, cfunc, gfunc, optimOptionsInstance):
     k = 1
     g = gfunc(x)
     d = -g
-    ss = btLineSearch(x, g, d, cfunc, optimOptionsInstance)
+    ss = btLineSearch(x, gfunc, d, cfunc, optimOptionsInstance)
     gprev = g
     dprev = d
     x = x + ss*d
@@ -239,7 +246,7 @@ def cgHF(init, cfunc, gfunc, optimOptionsInstance):
         g = gfunc(x)
         beta = (np.vdot(g, g-gprev))/(np.vdot(dprev, (g-gprev)))
         d = -g + beta*dprev
-        ss = btLineSearch(x,g,d, cfunc, optimOptionsInstance)
+        ss = btLineSearch(x,gfunc,d, cfunc, optimOptionsInstance)
         x = x + ss*d
         dprev = d
         gprev = g
@@ -262,7 +269,7 @@ def cgCD(init, cfunc, gfunc, optimOptionsInstance):
     k = 1
     g = gfunc(x)
     d = -g
-    ss = btLineSearch(x, g, d, cfunc, optimOptionsInstance)
+    ss = btLineSearch(x, gfunc, d, cfunc, optimOptionsInstance)
     gprev = g
     dprev = d
     x = x + ss*d
@@ -270,7 +277,7 @@ def cgCD(init, cfunc, gfunc, optimOptionsInstance):
         g = gfunc(x)
         beta = -(np.linalg.norm(g)) / (np.vdot(dprev, (gprev)))
         d = -g + beta*dprev
-        ss = btLineSearch(x,g,d, cfunc, optimOptionsInstance)
+        ss = btLineSearch(x,gfunc,d, cfunc, optimOptionsInstance)
         x = x + ss*d
         dprev = d
         gprev = g
